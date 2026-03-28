@@ -1,0 +1,29 @@
+# Environment — never commit secrets
+.env
+
+# Generated keypairs — contain private keys
+keys/*.pem
+keys/revoked/*.pem
+
+# Runtime state — local to each user's machine
+state/sequence_state.json
+state/group_keys.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
