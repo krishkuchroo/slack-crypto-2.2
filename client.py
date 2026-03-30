@@ -193,7 +193,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
     messages.sort(key=lambda m: m.get("sequence", 0))
 
     accepted_sequences = []
-    last_known_seq = state.get_last_seq("__any__")
 
     for payload in messages:
         sender_id = payload.get("sender_id", "unknown")
@@ -465,40 +464,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_init = subparsers.add_parser("init-channel", help="Initialize a channel")
     p_init.add_argument("--channel", required=True, help="Channel name")
     p_init.add_argument("--admin", required=True, help="Admin user name")
-    p_init.add_argument("--members", required=True,
-                        help="Comma-separated member names")
+    p_init.add_argument("--members", required=True, help="Comma-separated member names")
 
     p_post = subparsers.add_parser("post", help="Encrypt and post a message")
     p_post.add_argument("--channel", required=True, help="Channel name")
     p_post.add_argument("--sender", required=True, help="Sender user name")
     p_post.add_argument("--message", required=True, help="Plaintext message")
-    p_post.add_argument("--pad", action="store_true",
-                        help="Pad message to fixed block size")
-    p_post.add_argument("--spoof-sender-id", default=None,
-                        help="Claim to be this sender (spoofing demo)")
+    p_post.add_argument("--pad", action="store_true", help="Pad message to fixed block size")
+    p_post.add_argument("--spoof-sender-id", default=None, help="Claim to be this sender (spoofing demo)")
 
     p_fetch = subparsers.add_parser("fetch", help="Fetch and decrypt messages")
     p_fetch.add_argument("--channel", required=True, help="Channel name")
     p_fetch.add_argument("--receiver", required=True, help="Receiver user name")
-    p_fetch.add_argument("--limit", type=int, default=20,
-                         help="Max messages to fetch")
-    p_fetch.add_argument("--check-gaps", action="store_true",
-                         help="Detect missing sequence numbers")
+    p_fetch.add_argument("--limit", type=int, default=20, help="Max messages to fetch")
+    p_fetch.add_argument("--check-gaps", action="store_true", help="Detect missing sequence numbers")
 
-    p_verify = subparsers.add_parser("verify",
-                                     help="Verify signatures only (no decrypt)")
+    p_verify = subparsers.add_parser("verify", help="Verify signatures only (no decrypt)")
     p_verify.add_argument("--channel", required=True, help="Channel name")
     p_verify.add_argument("--receiver", required=True, help="Receiver user name")
-    p_verify.add_argument("--limit", type=int, default=20,
-                          help="Max messages to fetch")
+    p_verify.add_argument("--limit", type=int, default=20, help="Max messages to fetch")
 
     p_add = subparsers.add_parser("addmember", help="Add a member to a channel")
     p_add.add_argument("--channel", required=True, help="Channel name")
     p_add.add_argument("--admin", required=True, help="Admin user name")
     p_add.add_argument("--member", required=True, help="New member name")
 
-    p_rev = subparsers.add_parser("revoke",
-                                  help="Revoke a member and rotate key")
+    p_rev = subparsers.add_parser("revoke", help="Revoke a member and rotate key")
     p_rev.add_argument("--channel", required=True, help="Channel name")
     p_rev.add_argument("--admin", required=True, help="Admin user name")
     p_rev.add_argument("--member", required=True, help="Member to revoke")
@@ -507,11 +498,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_rot.add_argument("--channel", required=True, help="Channel name")
     p_rot.add_argument("--admin", required=True, help="Admin user name")
 
-    p_replay = subparsers.add_parser("replay",
-                                     help="Re-post an old message (demo attack)")
+    p_replay = subparsers.add_parser("replay", help="Re-post an old message (demo attack)")
     p_replay.add_argument("--channel", required=True, help="Channel name")
-    p_replay.add_argument("--seq", type=int, required=True,
-                          help="Sequence number of message to replay")
+    p_replay.add_argument("--seq", type=int, required=True, help="Sequence number of message to replay")
 
     return parser
 
