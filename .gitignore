@@ -1,4 +1,4 @@
-# Claude Code — local AI assistant config, not project code
+# Local config
 .claude/
 
 # Environment — never commit secrets
