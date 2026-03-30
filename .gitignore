@@ -1,6 +1,3 @@
-# Local config
-.claude/
-
 # Environment — never commit secrets
 .env
 
