@@ -1,8 +1,3 @@
-"""
-test_state.py -- Unit tests for state.py
-NYU CS6903/4783 Project 2.2
-"""
-
 import json
 import os
 import shutil
@@ -16,7 +11,6 @@ import state
 
 
 class TestSequenceState(unittest.TestCase):
-    """Test replay prevention via sequence counters."""
 
     def setUp(self):
         self.orig_dir = state.STATE_DIR
@@ -59,7 +53,6 @@ class TestSequenceState(unittest.TestCase):
 
     def test_seq_persists_across_calls(self):
         state.update_seq("bob", 10)
-        # Simulate a fresh load by reading the file directly
         with open(state.SEQ_FILE, "r") as f:
             data = json.load(f)
         self.assertEqual(data["recv:bob"], 10)
@@ -73,17 +66,13 @@ class TestSequenceState(unittest.TestCase):
         self.assertFalse(state.is_replay("alice", 6))
 
     def test_send_and_recv_independent(self):
-        """Send-side and receive-side seq counters must not collide."""
         state.update_send_seq("alice", 5)
-        # Receive-side should still be 0
         self.assertEqual(state.get_last_seq("alice"), 0)
         self.assertFalse(state.is_replay("alice", 1))
-        # Send-side should be 5
         self.assertEqual(state.get_next_send_seq("alice"), 6)
 
 
 class TestGroupKeyState(unittest.TestCase):
-    """Test group key state management."""
 
     def setUp(self):
         self.orig_dir = state.STATE_DIR
@@ -155,10 +144,8 @@ class TestGroupKeyState(unittest.TestCase):
         self.assertEqual(entry["ciphertext"], "ee")
         self.assertEqual(entry["plaintext_hex"], "new_hex")
 
-        # Verify current_key_id updated
         data = state._load_json(state.KEY_FILE)
         self.assertEqual(data["ch1"]["current_key_id"], "key-002")
-        # Old key still in history
         self.assertIn("key-001", data["ch1"]["keys"])
 
     def test_revoke_member(self):

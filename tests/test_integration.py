@@ -1,10 +1,3 @@
-"""
-test_integration.py -- Integration tests with mocked Slack interface.
-NYU CS6903/4783 Project 2.2
-
-Tests the full send/receive pipeline without a real Slack connection.
-"""
-
 import base64
 import json
 import os
@@ -23,7 +16,6 @@ import padding as pad_module
 
 
 class MockSlackChannel:
-    """In-memory mock of a Slack channel for testing."""
 
     def __init__(self):
         self.messages = []
@@ -36,14 +28,12 @@ class MockSlackChannel:
 
 
 class IntegrationTestBase(unittest.TestCase):
-    """Base class that sets up keys, state dirs, and mock Slack."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.keys_dir = os.path.join(self.tmpdir, "keys")
         os.makedirs(self.keys_dir)
 
-        # Redirect state module to temp dir
         self.orig_state_dir = state.STATE_DIR
         state.STATE_DIR = os.path.join(self.tmpdir, "state")
         state.SEQ_FILE = os.path.join(state.STATE_DIR, "sequence_state.json")
@@ -53,13 +43,11 @@ class IntegrationTestBase(unittest.TestCase):
         self.channel = MockSlackChannel()
         self.channel_id = "test-channel"
 
-        # Generate keys for alice and bob
         self.alice_x_priv, self.alice_x_pub = crypto.generate_x25519_keypair()
         self.alice_ed_priv, self.alice_ed_pub = crypto.generate_ed25519_keypair()
         self.bob_x_priv, self.bob_x_pub = crypto.generate_x25519_keypair()
         self.bob_ed_priv, self.bob_ed_pub = crypto.generate_ed25519_keypair()
 
-        # Save keys
         for name, priv, pub, ktype in [
             ("alice", self.alice_x_priv, self.alice_x_pub, "x25519"),
             ("alice", self.alice_ed_priv, self.alice_ed_pub, "ed25519"),
@@ -73,7 +61,6 @@ class IntegrationTestBase(unittest.TestCase):
                 pub, os.path.join(self.keys_dir, f"{name}_{ktype}_public.pem")
             )
 
-        # Generate and distribute group key
         self.group_key = os.urandom(32)
         alice_wrapped = crypto.wrap_group_key(
             self.group_key, self.alice_x_pub, self.alice_x_priv, self.channel_id
@@ -95,7 +82,6 @@ class IntegrationTestBase(unittest.TestCase):
 
     def _send_message(self, sender_id, sender_ed_priv, message_text, seq=None,
                       use_padding=False, spoof_sender=None):
-        """Simulate the full send pipeline."""
         claimed_sender = spoof_sender if spoof_sender else sender_id
         plaintext = message_text.encode("utf-8")
         if use_padding:
@@ -136,7 +122,6 @@ class IntegrationTestBase(unittest.TestCase):
         return payload
 
     def _receive_messages(self, receiver_id, receiver_ed_pub_loader):
-        """Simulate the full receive pipeline. Returns list of results."""
         messages = self.channel.fetch()
         messages.sort(key=lambda m: m.get("sequence", 0))
 
@@ -193,7 +178,6 @@ class IntegrationTestBase(unittest.TestCase):
 
 
 class TestNormalFlow(IntegrationTestBase):
-    """Test normal send/receive cycle."""
 
     def test_roundtrip(self):
         self._send_message("alice", self.alice_ed_priv, "Hello Bob!")
@@ -225,12 +209,10 @@ class TestNormalFlow(IntegrationTestBase):
 
 
 class TestTamperDetection(IntegrationTestBase):
-    """Test that ciphertext modification is detected."""
 
     def test_tampered_ciphertext_rejected(self):
         self._send_message("alice", self.alice_ed_priv, "Secret")
 
-        # Tamper with ciphertext in the channel
         msg = self.channel.messages[0]
         ct_bytes = bytearray(base64.b64decode(msg["ciphertext"]))
         ct_bytes[0] ^= 0xFF
@@ -240,18 +222,14 @@ class TestTamperDetection(IntegrationTestBase):
             return self.alice_ed_pub
 
         results = self._receive_messages("bob", pub_loader)
-        # Should be SPOOF or TAMPER (since signature now fails on modified ct)
         self.assertIn(results[0][0], ("SPOOF", "TAMPER"))
 
 
 class TestSpoofDetection(IntegrationTestBase):
-    """Test that spoofed sender is detected."""
 
     def test_spoofed_sender_rejected(self):
-        # Mallory generates her own keys
         mallory_ed_priv, mallory_ed_pub = crypto.generate_ed25519_keypair()
 
-        # Mallory sends claiming to be alice (signs with her own key)
         self._send_message(
             "mallory", mallory_ed_priv, "I am totally alice",
             spoof_sender="alice", seq=99
@@ -259,7 +237,7 @@ class TestSpoofDetection(IntegrationTestBase):
 
         def pub_loader(sid):
             if sid == "alice":
-                return self.alice_ed_pub  # Bob loads alice's real key
+                return self.alice_ed_pub
             return self.bob_ed_pub
 
         results = self._receive_messages("bob", pub_loader)
@@ -268,7 +246,6 @@ class TestSpoofDetection(IntegrationTestBase):
 
 
 class TestReplayDetection(IntegrationTestBase):
-    """Test that replay attacks are detected."""
 
     def test_replay_rejected(self):
         self._send_message("alice", self.alice_ed_priv, "Original")
@@ -276,29 +253,23 @@ class TestReplayDetection(IntegrationTestBase):
         def pub_loader(sid):
             return self.alice_ed_pub
 
-        # First receive
         results1 = self._receive_messages("bob", pub_loader)
         self.assertEqual(results1[0][0], "OK")
 
-        # Re-post the same message (replay)
         replayed = self.channel.messages[0].copy()
         self.channel.messages.append(replayed)
 
-        # Second receive
         results2 = self._receive_messages("bob", pub_loader)
         replays = [r for r in results2 if r[0] == "REPLAY"]
         self.assertGreater(len(replays), 0)
 
 
 class TestKeyRotation(IntegrationTestBase):
-    """Test that key rotation excludes revoked members."""
 
     def test_revoked_member_cannot_decrypt(self):
-        # Generate carol's keys
         carol_x_priv, carol_x_pub = crypto.generate_x25519_keypair()
         carol_ed_priv, carol_ed_pub = crypto.generate_ed25519_keypair()
 
-        # Add carol
         carol_wrapped = crypto.wrap_group_key(
             self.group_key, carol_x_pub, self.alice_x_priv, self.channel_id
         )
@@ -306,11 +277,9 @@ class TestKeyRotation(IntegrationTestBase):
             self.channel_id, "carol", carol_wrapped, self.group_key.hex()
         )
 
-        # Verify carol can access key
         entry = state.get_group_key(self.channel_id, "carol")
         self.assertIsNotNone(entry)
 
-        # Rotate key excluding carol
         new_group_key = os.urandom(32)
         alice_new = crypto.wrap_group_key(
             new_group_key, self.alice_x_pub, self.alice_x_priv, self.channel_id
@@ -324,13 +293,11 @@ class TestKeyRotation(IntegrationTestBase):
             new_group_key.hex(),
         )
 
-        # Carol should not be in the new key
         with self.assertRaises(KeyError):
             state.get_group_key(self.channel_id, "carol")
 
 
 class TestPaddingRoundtrip(IntegrationTestBase):
-    """Test message padding roundtrip."""
 
     def test_padded_message_roundtrip(self):
         self._send_message(
@@ -347,7 +314,6 @@ class TestPaddingRoundtrip(IntegrationTestBase):
 
 
 class TestPaddingModule(unittest.TestCase):
-    """Test padding.py directly."""
 
     def test_pad_unpad_roundtrip(self):
         msg = b"hello"
@@ -364,7 +330,6 @@ class TestPaddingModule(unittest.TestCase):
         self.assertEqual(unpadded, msg)
 
     def test_exact_alignment_gets_extra_block(self):
-        # 28 bytes of plaintext + 4 bytes header = 32, should get padded to 64
         msg = b"A" * 28
         padded = pad_module.pad_message(msg, 32)
         self.assertEqual(len(padded), 64)
@@ -376,7 +341,6 @@ class TestPaddingModule(unittest.TestCase):
 
     def test_invalid_length_prefix_raises(self):
         import struct
-        # Claim 1000 bytes but provide only 10
         bad = struct.pack(">I", 1000) + b"\x00" * 10
         with self.assertRaises(ValueError):
             pad_module.unpad_message(bad)
