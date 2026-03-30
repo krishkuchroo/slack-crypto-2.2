@@ -1,11 +1,3 @@
-"""
-slack_interface.py -- Slack API transport layer (no crypto).
-NYU CS6903/4783 Project 2.2
-
-This module handles ONLY Slack API calls. No cryptography here.
-Uses slack_sdk.WebClient with token from SLACK_BOT_TOKEN env variable.
-"""
-
 import json
 import os
 from typing import Optional
@@ -19,14 +11,6 @@ load_dotenv()
 
 
 def _get_client() -> WebClient:
-    """Create a Slack WebClient using the bot token from the environment.
-
-    Returns:
-        Configured WebClient instance.
-
-    Raises:
-        EnvironmentError: If SLACK_BOT_TOKEN is not set.
-    """
     token = os.environ.get("SLACK_BOT_TOKEN")
     if not token:
         raise EnvironmentError(
@@ -36,20 +20,6 @@ def _get_client() -> WebClient:
 
 
 def resolve_channel_id(channel_name: str) -> str:
-    """Resolve a channel name to its Slack channel ID.
-
-    Searches public channels the bot has access to.
-
-    Args:
-        channel_name: Human-readable channel name (without #).
-
-    Returns:
-        Slack channel ID string (e.g. "C0123456789").
-
-    Raises:
-        ValueError: If the channel is not found.
-        SlackApiError: On Slack API failures.
-    """
     client = _get_client()
     cursor = None
     while True:
@@ -71,15 +41,6 @@ def resolve_channel_id(channel_name: str) -> str:
 
 
 def post_message(channel: str, payload: dict) -> None:
-    """JSON-serialize a payload and post it to a Slack channel.
-
-    Args:
-        channel: Slack channel name (will be resolved to ID).
-        payload: Dictionary to serialize as the message body.
-
-    Raises:
-        SlackApiError: On Slack API failures.
-    """
     client = _get_client()
     channel_id = resolve_channel_id(channel)
     text = json.dumps(payload)
@@ -89,21 +50,6 @@ def post_message(channel: str, payload: dict) -> None:
 def fetch_messages(
     channel: str, limit: int = 20, oldest: Optional[str] = None
 ) -> list:
-    """Fetch recent messages from a Slack channel and parse JSON payloads.
-
-    Non-JSON system messages are silently skipped.
-
-    Args:
-        channel: Slack channel name (will be resolved to ID).
-        limit: Maximum number of messages to retrieve.
-        oldest: Optional Unix timestamp string; only fetch messages after this.
-
-    Returns:
-        List of parsed JSON dicts from channel messages.
-
-    Raises:
-        SlackApiError: On Slack API failures.
-    """
     client = _get_client()
     channel_id = resolve_channel_id(channel)
 
@@ -120,5 +66,5 @@ def fetch_messages(
             if isinstance(parsed, dict):
                 messages.append(parsed)
         except (json.JSONDecodeError, TypeError):
-            continue  # skip non-JSON system messages
+            continue
     return messages

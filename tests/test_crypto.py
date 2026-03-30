@@ -1,14 +1,8 @@
-"""
-test_crypto.py -- Unit tests for crypto.py
-NYU CS6903/4783 Project 2.2
-"""
-
 import os
 import sys
 import tempfile
 import unittest
 
-# Add parent directory to path so we can import the modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import crypto
@@ -16,7 +10,6 @@ from cryptography.exceptions import InvalidTag, InvalidSignature
 
 
 class TestKeyGeneration(unittest.TestCase):
-    """Test X25519 and Ed25519 key generation."""
 
     def test_x25519_keypair(self):
         priv, pub = crypto.generate_x25519_keypair()
@@ -46,7 +39,6 @@ class TestKeyGeneration(unittest.TestCase):
 
 
 class TestKeySerialization(unittest.TestCase):
-    """Test save/load roundtrip for all key types."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -62,7 +54,6 @@ class TestKeySerialization(unittest.TestCase):
         loaded_priv = crypto.load_x25519_private(priv_path)
         loaded_pub = crypto.load_x25519_public(pub_path)
 
-        # Verify they work by performing a DH exchange
         from cryptography.hazmat.primitives import serialization
         orig_pub_bytes = pub.public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw
@@ -83,10 +74,9 @@ class TestKeySerialization(unittest.TestCase):
         loaded_priv = crypto.load_ed25519_private(priv_path)
         loaded_pub = crypto.load_ed25519_public(pub_path)
 
-        # Verify by signing and verifying
         msg = b"test message"
         sig = loaded_priv.sign(msg)
-        loaded_pub.verify(sig, msg)  # Should not raise
+        loaded_pub.verify(sig, msg)
 
     def test_load_nonexistent_raises(self):
         with self.assertRaises(FileNotFoundError):
@@ -94,7 +84,6 @@ class TestKeySerialization(unittest.TestCase):
 
 
 class TestFingerprint(unittest.TestCase):
-    """Test key fingerprinting."""
 
     def test_fingerprint_deterministic(self):
         _, pub = crypto.generate_x25519_keypair()
@@ -113,7 +102,6 @@ class TestFingerprint(unittest.TestCase):
         crypto.save_public_key(pub, path)
 
         fp = crypto.fingerprint(path)
-        # SHA-256 hex = 64 chars, colon-separated pairs = 32 pairs
         parts = fp.split(":")
         self.assertEqual(len(parts), 32)
         for part in parts:
@@ -134,7 +122,6 @@ class TestFingerprint(unittest.TestCase):
 
 
 class TestAESGCM(unittest.TestCase):
-    """Test AES-256-GCM encryption and decryption."""
 
     def test_encrypt_decrypt_roundtrip(self):
         key = os.urandom(32)
@@ -152,7 +139,6 @@ class TestAESGCM(unittest.TestCase):
 
         ciphertext, iv = crypto.encrypt_message(plaintext, key, aad)
 
-        # Tamper with one byte
         tampered = bytearray(ciphertext)
         tampered[0] ^= 0xFF
         tampered = bytes(tampered)
@@ -193,7 +179,6 @@ class TestAESGCM(unittest.TestCase):
 
 
 class TestEd25519Signing(unittest.TestCase):
-    """Test Ed25519 signing and verification."""
 
     def test_sign_verify_success(self):
         priv, pub = crypto.generate_ed25519_keypair()
@@ -201,7 +186,7 @@ class TestEd25519Signing(unittest.TestCase):
             b"ciphertext", b"iv12bytes!!!", "alice", 1, "2026-01-01T00:00:00Z", "ch1"
         )
         sig = crypto.sign_message(priv, blob)
-        crypto.verify_signature(pub, blob, sig)  # Should not raise
+        crypto.verify_signature(pub, blob, sig)
 
     def test_tampered_blob_raises(self):
         priv, pub = crypto.generate_ed25519_keypair()
@@ -210,7 +195,6 @@ class TestEd25519Signing(unittest.TestCase):
         )
         sig = crypto.sign_message(priv, blob)
 
-        # Tamper with blob
         tampered_blob = crypto.build_signed_blob(
             b"TAMPERED", b"iv12bytes!!!", "alice", 1, "2026-01-01T00:00:00Z", "ch1"
         )
@@ -231,11 +215,9 @@ class TestEd25519Signing(unittest.TestCase):
             crypto.verify_signature(pub2, blob, sig)
 
     def test_signed_blob_includes_all_fields(self):
-        """Changing any field should produce a different blob."""
         base_args = [b"ct", b"iv", "alice", 1, "ts", "ch"]
         base_blob = crypto.build_signed_blob(*base_args)
 
-        # Change each field one at a time
         variants = [
             [b"CT", b"iv", "alice", 1, "ts", "ch"],
             [b"ct", b"IV", "alice", 1, "ts", "ch"],
@@ -251,7 +233,6 @@ class TestEd25519Signing(unittest.TestCase):
 
 
 class TestGroupKeyWrapping(unittest.TestCase):
-    """Test group key wrap/unwrap roundtrip."""
 
     def test_wrap_unwrap_roundtrip(self):
         admin_priv, admin_pub = crypto.generate_x25519_keypair()

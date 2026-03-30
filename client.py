@@ -1,12 +1,3 @@
-"""
-client.py -- CLI entry point for E2E encrypted Slack messaging.
-NYU CS6903/4783 Project 2.2
-
-Uses argparse with subcommands. Wires together crypto.py, slack_interface.py,
-state.py, and padding.py. All cryptographic exceptions are caught and
-translated into user-friendly CLI output.
-"""
-
 import argparse
 import base64
 import json
@@ -26,41 +17,23 @@ REVOKED_DIR = os.path.join(KEYS_DIR, "revoked")
 
 
 def _ensure_dirs() -> None:
-    """Create keys/ and state/ directories if they do not exist."""
     os.makedirs(KEYS_DIR, exist_ok=True)
     os.makedirs(REVOKED_DIR, exist_ok=True)
     os.makedirs("state", exist_ok=True)
 
 
 def _key_path(name: str, key_type: str, access: str) -> str:
-    """Build a key file path.
-
-    Args:
-        name: User name (e.g. "alice").
-        key_type: "x25519" or "ed25519".
-        access: "private" or "public".
-
-    Returns:
-        Path string like "keys/alice_x25519_private.pem".
-    """
     return os.path.join(KEYS_DIR, f"{name}_{key_type}_{access}.pem")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: keygen
-# ---------------------------------------------------------------------------
-
 def cmd_keygen(args: argparse.Namespace) -> None:
-    """Generate X25519 and Ed25519 keypairs for a user."""
     _ensure_dirs()
     name = args.name
 
-    # X25519
     x_priv, x_pub = crypto.generate_x25519_keypair()
     crypto.save_private_key(x_priv, _key_path(name, "x25519", "private"))
     crypto.save_public_key(x_pub, _key_path(name, "x25519", "public"))
 
-    # Ed25519
     ed_priv, ed_pub = crypto.generate_ed25519_keypair()
     crypto.save_private_key(ed_priv, _key_path(name, "ed25519", "private"))
     crypto.save_public_key(ed_pub, _key_path(name, "ed25519", "public"))
@@ -72,12 +45,7 @@ def cmd_keygen(args: argparse.Namespace) -> None:
     print(f"           {_key_path(name, 'ed25519', 'public')}")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: fingerprint
-# ---------------------------------------------------------------------------
-
 def cmd_fingerprint(args: argparse.Namespace) -> None:
-    """Print SHA-256 fingerprints of a user's public keys."""
     name = args.name
 
     x_pub_path = _key_path(name, "x25519", "public")
@@ -96,30 +64,21 @@ def cmd_fingerprint(args: argparse.Namespace) -> None:
     print(f"  SHA-256: {ed_fp}")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: init-channel
-# ---------------------------------------------------------------------------
-
 def cmd_init_channel(args: argparse.Namespace) -> None:
-    """Create a channel, generate a group AES key, wrap for each member."""
     _ensure_dirs()
     channel = args.channel
     admin = args.admin
     members = [m.strip() for m in args.members.split(",")]
 
-    # Include admin in the member list
     all_members = [admin] + [m for m in members if m != admin]
 
-    # Generate random 256-bit group AES key
     group_key = os.urandom(32)
     group_key_hex = group_key.hex()
 
-    # Load admin's X25519 private key
     admin_x_priv = crypto.load_x25519_private(
         _key_path(admin, "x25519", "private")
     )
 
-    # Wrap group key for each member
     key_id = f"key-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     wrapped_keys = {}
     for member in all_members:
@@ -131,7 +90,6 @@ def cmd_init_channel(args: argparse.Namespace) -> None:
         )
         wrapped_keys[member] = wrapped
 
-    # Store in group_keys.json
     state.init_channel(channel, admin, key_id, wrapped_keys, group_key_hex)
 
     print(f"[OK] Channel '{channel}' initialized")
@@ -141,33 +99,22 @@ def cmd_init_channel(args: argparse.Namespace) -> None:
     print(f"  Group key stored in state/group_keys.json")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: post
-# ---------------------------------------------------------------------------
-
 def cmd_post(args: argparse.Namespace) -> None:
-    """Encrypt a message and post it to a Slack channel."""
     channel = args.channel
     sender = args.sender
     message_text = args.message
     use_padding = args.pad
     spoof_sender_id = getattr(args, "spoof_sender_id", None)
 
-    # The sender_id that goes into the message metadata
-    # (for spoofing demo: sender signs with their own key but claims
-    # to be someone else)
     claimed_sender = spoof_sender_id if spoof_sender_id else sender
 
-    # Load sender's keys
     ed_priv = crypto.load_ed25519_private(
         _key_path(sender, "ed25519", "private")
     )
 
-    # Load group AES key from state
     try:
         key_entry = state.get_group_key(channel, sender)
     except KeyError:
-        # If spoofing, try loading with claimed sender
         if spoof_sender_id:
             try:
                 key_entry = state.get_group_key(channel, spoof_sender_id)
@@ -180,16 +127,13 @@ def cmd_post(args: argparse.Namespace) -> None:
 
     group_key = bytes.fromhex(key_entry["plaintext_hex"])
 
-    # Prepare plaintext
     plaintext = message_text.encode("utf-8")
     if use_padding:
         plaintext = pad_module.pad_message(plaintext)
 
-    # Build sequence and timestamp
     sequence = state.get_next_send_seq(claimed_sender)
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Build AAD
     aad_dict = {
         "version": 1,
         "channel_id": channel,
@@ -199,16 +143,13 @@ def cmd_post(args: argparse.Namespace) -> None:
     }
     aad = json.dumps(aad_dict, sort_keys=True).encode("utf-8")
 
-    # Encrypt
     ciphertext, iv = crypto.encrypt_message(plaintext, group_key, aad)
 
-    # Build signed blob and sign
     signed_blob = crypto.build_signed_blob(
         ciphertext, iv, claimed_sender, sequence, timestamp, channel
     )
     signature = crypto.sign_message(ed_priv, signed_blob)
 
-    # Package as JSON for Slack
     payload = {
         "version": 1,
         "channel_id": channel,
@@ -221,10 +162,8 @@ def cmd_post(args: argparse.Namespace) -> None:
         "padded": use_padding,
     }
 
-    # Post to Slack
     slack_interface.post_message(channel, payload)
 
-    # Update local send sequence counter
     state.update_send_seq(claimed_sender, sequence)
 
     print(f"[OK] Message posted to #{channel}")
@@ -234,18 +173,12 @@ def cmd_post(args: argparse.Namespace) -> None:
     print(f"  Ciphertext length: {len(ciphertext)} bytes")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: fetch
-# ---------------------------------------------------------------------------
-
 def cmd_fetch(args: argparse.Namespace) -> None:
-    """Fetch, verify, and decrypt messages from a Slack channel."""
     channel = args.channel
     receiver = args.receiver
     limit = args.limit
     check_gaps = args.check_gaps
 
-    # Load receiver's group key
     try:
         key_entry = state.get_group_key(channel, receiver)
     except KeyError:
@@ -255,26 +188,22 @@ def cmd_fetch(args: argparse.Namespace) -> None:
 
     group_key = bytes.fromhex(key_entry["plaintext_hex"])
 
-    # Fetch messages from Slack
     messages = slack_interface.fetch_messages(channel, limit)
 
-    # Sort by sequence number ascending (prevents offline-recipient bug)
     messages.sort(key=lambda m: m.get("sequence", 0))
 
     accepted_sequences = []
-    last_known_seq = state.get_last_seq("__any__")  # track for gap detection
+    last_known_seq = state.get_last_seq("__any__")
 
     for payload in messages:
         sender_id = payload.get("sender_id", "unknown")
         seq = payload.get("sequence", 0)
 
-        # 1. Replay check
         if state.is_replay(sender_id, seq):
             print(f"[REPLAY] Rejected message from {sender_id} seq={seq} "
                   f"(last accepted: {state.get_last_seq(sender_id)})")
             continue
 
-        # 2. Decode fields
         try:
             iv = base64.b64decode(payload["iv"])
             ciphertext = base64.b64decode(payload["ciphertext"])
@@ -286,7 +215,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         timestamp = payload.get("timestamp", "")
         channel_id = payload.get("channel_id", channel)
 
-        # 3. Reconstruct signed blob and verify signature
         signed_blob = crypto.build_signed_blob(
             ciphertext, iv, sender_id, seq, timestamp, channel_id
         )
@@ -303,7 +231,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
                   f"seq={seq}")
             continue
 
-        # 4. Reconstruct AAD and decrypt
         aad_dict = {
             "version": payload.get("version", 1),
             "channel_id": channel_id,
@@ -320,7 +247,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
                   f"seq={seq} -- message modified or wrong key")
             continue
 
-        # 5. Unpad if needed
         if payload.get("padded", False):
             try:
                 plaintext = pad_module.unpad_message(plaintext)
@@ -328,7 +254,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
                 print(f"[ERROR] Padding invalid for message from {sender_id}: {e}")
                 continue
 
-        # 6. Accept: update sequence counter, print plaintext
         state.update_seq(sender_id, seq)
         accepted_sequences.append(seq)
         decoded = plaintext.decode("utf-8")
@@ -337,7 +262,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
     if not messages:
         print("[INFO] No messages found.")
 
-    # Gap detection
     if check_gaps and accepted_sequences:
         for sender_id_check in set(
             m.get("sender_id", "") for m in messages
@@ -362,12 +286,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
                     )
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: verify (signature check only, no decryption)
-# ---------------------------------------------------------------------------
-
 def cmd_verify(args: argparse.Namespace) -> None:
-    """Fetch messages and verify signatures only (no decryption)."""
     channel = args.channel
     receiver = args.receiver
 
@@ -404,19 +323,13 @@ def cmd_verify(args: argparse.Namespace) -> None:
             print(f"[SPOOF] Signature INVALID for {sender_id} seq={seq}")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: addmember
-# ---------------------------------------------------------------------------
-
 def cmd_addmember(args: argparse.Namespace) -> None:
-    """Wrap the existing group key for a new member."""
     channel = args.channel
     admin = args.admin
     member = args.member
 
     _ensure_dirs()
 
-    # Load admin's group key
     try:
         admin_entry = state.get_group_key(channel, admin)
     except KeyError:
@@ -425,7 +338,6 @@ def cmd_addmember(args: argparse.Namespace) -> None:
 
     group_key = bytes.fromhex(admin_entry["plaintext_hex"])
 
-    # Load keys
     admin_x_priv = crypto.load_x25519_private(
         _key_path(admin, "x25519", "private")
     )
@@ -433,26 +345,19 @@ def cmd_addmember(args: argparse.Namespace) -> None:
         _key_path(member, "x25519", "public")
     )
 
-    # Wrap and store
     wrapped = crypto.wrap_group_key(group_key, member_x_pub, admin_x_priv, channel)
     state.add_member_key(channel, member, wrapped, admin_entry["plaintext_hex"])
 
     print(f"[OK] Added '{member}' to channel '{channel}'")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: revoke
-# ---------------------------------------------------------------------------
-
 def cmd_revoke(args: argparse.Namespace) -> None:
-    """Revoke a member and rotate the group key."""
     channel = args.channel
     admin = args.admin
     member = args.member
 
     _ensure_dirs()
 
-    # Get current members before revocation
     try:
         current_members = state.get_channel_members(channel)
     except KeyError:
@@ -465,16 +370,13 @@ def cmd_revoke(args: argparse.Namespace) -> None:
 
     remaining = [m for m in current_members if m != member]
 
-    # Generate new group key
     new_group_key = os.urandom(32)
     new_group_key_hex = new_group_key.hex()
 
-    # Load admin's private key
     admin_x_priv = crypto.load_x25519_private(
         _key_path(admin, "x25519", "private")
     )
 
-    # Wrap new key for remaining members only
     new_key_id = f"key-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     new_wrapped = {}
     for m in remaining:
@@ -483,10 +385,8 @@ def cmd_revoke(args: argparse.Namespace) -> None:
             new_group_key, m_x_pub, admin_x_priv, channel
         )
 
-    # Rotate key in state
     state.rotate_key(channel, admin, new_key_id, new_wrapped, new_group_key_hex)
 
-    # Move revoked member's keys to revoked/
     for key_type in ("x25519", "ed25519"):
         for access in ("private", "public"):
             src = _key_path(member, key_type, access)
@@ -499,12 +399,7 @@ def cmd_revoke(args: argparse.Namespace) -> None:
     print(f"  Remaining members: {', '.join(remaining)}")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: rotate
-# ---------------------------------------------------------------------------
-
 def cmd_rotate(args: argparse.Namespace) -> None:
-    """Generate a new group key and re-wrap for all current members."""
     channel = args.channel
     admin = args.admin
 
@@ -536,12 +431,7 @@ def cmd_rotate(args: argparse.Namespace) -> None:
     print(f"  Members: {', '.join(current_members)}")
 
 
-# ---------------------------------------------------------------------------
-# Subcommand: replay (for demo purposes)
-# ---------------------------------------------------------------------------
-
 def cmd_replay(args: argparse.Namespace) -> None:
-    """Re-post an old message to simulate a replay attack (demo only)."""
     channel = args.channel
     target_seq = args.seq
 
@@ -556,38 +446,28 @@ def cmd_replay(args: argparse.Namespace) -> None:
         print(f"[ERROR] No message with seq={target_seq} found in #{channel}")
         sys.exit(1)
 
-    # Re-post the exact same message (replay)
     slack_interface.post_message(channel, target)
     print(f"[REPLAY-ATTACK] Re-posted message seq={target_seq} to #{channel}")
 
 
-# ---------------------------------------------------------------------------
-# Argument Parser
-# ---------------------------------------------------------------------------
-
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argparse parser with all subcommands."""
     parser = argparse.ArgumentParser(
         description="E2E Encrypted Slack Messaging -- NYU CS6903 Project 2.2"
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # keygen
     p_keygen = subparsers.add_parser("keygen", help="Generate keypairs")
     p_keygen.add_argument("--name", required=True, help="User name")
 
-    # fingerprint
     p_fp = subparsers.add_parser("fingerprint", help="Show key fingerprints")
     p_fp.add_argument("--name", required=True, help="User name")
 
-    # init-channel
     p_init = subparsers.add_parser("init-channel", help="Initialize a channel")
     p_init.add_argument("--channel", required=True, help="Channel name")
     p_init.add_argument("--admin", required=True, help="Admin user name")
     p_init.add_argument("--members", required=True,
                         help="Comma-separated member names")
 
-    # post
     p_post = subparsers.add_parser("post", help="Encrypt and post a message")
     p_post.add_argument("--channel", required=True, help="Channel name")
     p_post.add_argument("--sender", required=True, help="Sender user name")
@@ -597,7 +477,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_post.add_argument("--spoof-sender-id", default=None,
                         help="Claim to be this sender (spoofing demo)")
 
-    # fetch
     p_fetch = subparsers.add_parser("fetch", help="Fetch and decrypt messages")
     p_fetch.add_argument("--channel", required=True, help="Channel name")
     p_fetch.add_argument("--receiver", required=True, help="Receiver user name")
@@ -606,7 +485,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument("--check-gaps", action="store_true",
                          help="Detect missing sequence numbers")
 
-    # verify
     p_verify = subparsers.add_parser("verify",
                                      help="Verify signatures only (no decrypt)")
     p_verify.add_argument("--channel", required=True, help="Channel name")
@@ -614,25 +492,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument("--limit", type=int, default=20,
                           help="Max messages to fetch")
 
-    # addmember
     p_add = subparsers.add_parser("addmember", help="Add a member to a channel")
     p_add.add_argument("--channel", required=True, help="Channel name")
     p_add.add_argument("--admin", required=True, help="Admin user name")
     p_add.add_argument("--member", required=True, help="New member name")
 
-    # revoke
     p_rev = subparsers.add_parser("revoke",
                                   help="Revoke a member and rotate key")
     p_rev.add_argument("--channel", required=True, help="Channel name")
     p_rev.add_argument("--admin", required=True, help="Admin user name")
     p_rev.add_argument("--member", required=True, help="Member to revoke")
 
-    # rotate
     p_rot = subparsers.add_parser("rotate", help="Rotate the group key")
     p_rot.add_argument("--channel", required=True, help="Channel name")
     p_rot.add_argument("--admin", required=True, help="Admin user name")
 
-    # replay (demo)
     p_replay = subparsers.add_parser("replay",
                                      help="Re-post an old message (demo attack)")
     p_replay.add_argument("--channel", required=True, help="Channel name")
@@ -643,7 +517,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """CLI entry point."""
     parser = build_parser()
     args = parser.parse_args()
 
