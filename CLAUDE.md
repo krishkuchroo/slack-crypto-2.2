@@ -42,14 +42,14 @@ docs/              # Planning docs, PDFs, implementation plan
 
 | Phase | File(s) | Status |
 |-------|---------|--------|
-| 1 | crypto.py | stub |
-| 2 | state.py | stub |
-| 3 | slack_interface.py | stub |
-| 4 | padding.py | stub |
-| 5 | client.py | stub |
-| 6 | demo/*.sh | stub |
-| 7 | README.md | stub |
-| 8 | tests/ | stub |
+| 1 | crypto.py | done |
+| 2 | state.py | done |
+| 3 | slack_interface.py | done |
+| 4 | padding.py | done |
+| 5 | client.py | done |
+| 6 | demo/*.sh | done |
+| 7 | README.md | done |
+| 8 | tests/ | done |
 
 **Session strategy:** Build Phases 1–4 together (all independent), then Phase 5, then Phases 6–8.
 
